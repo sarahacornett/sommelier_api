@@ -10,6 +10,14 @@ load_dotenv() # loads variables from .env file into os.environ
 # --- Setup and Loading ---
 app = FastAPI(title="Sommelier API")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows any web app to connect
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows POST, GET, etc.
+    allow_headers=["*"],
+)
+
 print("Loading ML Models...")
 price_model = joblib.load('price_model.pkl')
 quality_model = joblib.load('quality_model.pkl')

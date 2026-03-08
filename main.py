@@ -4,6 +4,7 @@ import joblib
 import os
 from google import genai
 from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv() # loads variables from .env file into os.environ
 

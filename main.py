@@ -1,62 +1,70 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import joblib
-import os
-from google import genai
-from dotenv import load_dotenv
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import google.generativeai as genai
+import os
+import joblib
+import pandas as pd
+from dotenv import load_dotenv
 
-load_dotenv() # loads variables from .env file into os.environ
+load_dotenv()
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
-# --- Setup and Loading ---
-app = FastAPI(title="Sommelier API")
+app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows any web app to connect
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows POST, GET, etc.
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-print("Loading ML Models...")
-price_model = joblib.load('price_model.pkl')
-quality_model = joblib.load('quality_model.pkl')
-variety_encoder = joblib.load('variety_encoder.pkl')
-region_encoder = joblib.load('region_encoder.pkl')
+# --- LOAD YOUR CUSTOM ML MODEL ---
+# This loads the model into the server's memory the moment it starts up up
+xgb_model = joblib.load('xgboost_price_model.pkl')
 
-# Configure Gemini API (We will set the key in your terminal later)
-print("Initializing Sommelier Brain...")
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+# --- 1. THE FLEXIBLE INPUT SCHEMA ---
+# Notice we set default values. If the Flutter app doesn't send a province, 
+# it defaults to 'Unknown' instead of crashing!
+class WinePriceRequest(BaseModel):
+    variety: str = "Unknown"
+    region: str = "Unknown"
+    province: str = "Unknown"
+    winery: str = "Unknown"
+    points: int = 88  # 88 is roughly the average score in the dataset
 
-# --- 2. Define Data Structures (What the app sends us) ---
-class WineFeatures(BaseModel):
-    variety: str
-    region: str
-    points: int = 85 # Default value
-    price: float = 20.0 # Default value
+# ... (Keep your root health check endpoint)
 
-class ChatMessage(BaseModel):
-    message: str
-
-# --- 3. The Endpoints ---
-
-@app.get("/")
-def read_root():
-    return {"status": "Sommelier API is running!"}
-
+# --- 2. THE NEW PREDICTION ENDPOINT ---
 @app.post("/predict-price")
-def predict_price(wine: WineFeatures):
+async def predict_custom_model(request: WinePriceRequest):
     try:
-        # Convert text to numbers using the encoders from Day 1
-        v_encoded = variety_encoder.transform([wine.variety])[0]
-        r_encoded = region_encoder.transform([wine.region])[0]
+        # Convert the incoming JSON into a 1-row Pandas DataFrame
+        input_data = pd.DataFrame([{
+            'variety': request.variety,
+            'region_1': request.region, # Matching the column name the model trained on
+            'province': request.province,
+            'winery': request.winery,
+            'points': request.points
+        }])
+
+        # Tell Pandas these are categorical columns (Required for XGBoost)
+        for col in ['variety', 'region_1', 'province', 'winery']:
+            input_data[col] = input_data[col].astype('category')
+
+        # Run the math!
+        prediction = xgb_model.predict(input_data)
         
-        # Make prediction
-        prediction = price_model.predict([[v_encoded, r_encoded, wine.points]])
-        return {"predicted_price": round(prediction[0], 2)}
+        # Round the price to 2 decimal places so it looks like real money
+        final_price = round(float(prediction[0]), 2)
+
+        return {"predicted_price": final_price}
+
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return {"error": str(e)}
+
+
 
 @app.post("/predict-quality")
 def predict_quality(wine: WineFeatures):

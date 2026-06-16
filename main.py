@@ -15,7 +15,7 @@ genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 # Initialize the FastAPI app
 app = FastAPI()
 
-# Configure CORS to allow your Flutter web app to connect
+# Configure CORS to allow Flutter web app to connect
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -39,13 +39,12 @@ async def root():
     return {"message": "Sommelier API is live and running!"}
 
 
-# --- TRACK 1: XGBOOST PRICE PREDICTOR ---
+# --- XGBOOST PRICE PREDICTOR ---
 class WinePriceRequest(BaseModel):
     variety: str = "Unknown"
     region: str = "Unknown"
     province: str = "Unknown"
     winery: str = "Unknown"
-    points: int = 88
 
 @app.post("/predict-price")
 async def predict_custom_model(request: WinePriceRequest):
@@ -55,18 +54,14 @@ async def predict_custom_model(request: WinePriceRequest):
             'variety': request.variety,
             'region_1': request.region,
             'province': request.province,
-            'winery': request.winery,
-            'points': request.points
+            'winery': request.winery
         }])
 
         # Tell Pandas these are categorical columns (Required for XGBoost)
         for col in ['variety', 'region_1', 'province', 'winery']:
             input_data[col] = input_data[col].astype('category')
 
-        # Run the math
         prediction = xgb_model.predict(input_data)
-        
-        # Round the price to 2 decimal places
         final_price = round(float(prediction[0]), 2)
 
         return {"predicted_price": final_price}
@@ -75,7 +70,7 @@ async def predict_custom_model(request: WinePriceRequest):
         return {"error": str(e)}
 
 
-# --- TRACK 2: RAG CHATBOT ---
+# --- RAG CHATBOT ---
 class ChatRequest(BaseModel):
     message: str
 
@@ -106,7 +101,7 @@ async def chat_with_sommelier(request: ChatRequest):
         """
 
         # 4. Send the prompt to Gemini
-        model = genai.GenerativeModel('gemini-1.5-flash') 
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
         response = model.generate_content(system_prompt)
 
         return {"reply": response.text}

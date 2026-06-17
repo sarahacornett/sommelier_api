@@ -6,29 +6,45 @@ import joblib
 
 # 1. Load data and include the new columns
 dataFrame = pd.read_csv('winemag-data-130k-v2.csv')
-dataFrame = dataFrame[['variety', 'region_1', 'province', 'winery', 'points', 'price']]
+dataFrame = dataFrame[['variety', 'region_1', 'province', 'winery', 'country', 'points', 'price']]
 dataFrame = dataFrame.dropna()
 
-# Check correlations with the price
-correlations = dataFrame.select_dtypes(include=['number']).corr()['price'].sort_values(ascending=False)
-print("--- Feature Correlations with Price ---")
-print(correlations)
 
-# 2. Filter for top 10 (keep it simple)
-top_varieties = dataFrame['variety'].value_counts().nlargest(10).index
-top_regions = dataFrame['region_1'].value_counts().nlargest(10).index
-dataFrame = dataFrame[dataFrame['variety'].isin(top_varieties) & dataFrame['region_1'].isin(top_regions)]
+# 2. Filter using frequency thresholds
+# Keep only varieties that appear at least 500 times
+variety_counts = dataFrame['variety'].value_counts()
+popular_varieties = variety_counts[variety_counts >= 500].index
+
+# Keep only regions that appear at least 500 times
+region_counts = dataFrame['region_1'].value_counts()
+popular_regions = region_counts[region_counts >= 500].index
+
+# Keep only wineries that appear at least 50 times (they are more specific)
+winery_counts = dataFrame['winery'].value_counts()
+popular_wineries = winery_counts[winery_counts >= 50].index
+
+# Apply the filter
+dataFrame = dataFrame[
+    dataFrame['variety'].isin(popular_varieties) & 
+    dataFrame['region_1'].isin(popular_regions) & 
+    dataFrame['winery'].isin(popular_wineries)
+]
 
 # 3. Create AND SAVE all 4 encoders
 encoders = {}
-for col in ['variety', 'region_1', 'province', 'winery']:
+for col in ['variety', 'region_1', 'province', 'winery', 'country']:
     le = LabelEncoder()
     dataFrame[f'{col}_encoded'] = le.fit_transform(dataFrame[col])
     encoders[col] = le
     joblib.dump(le, f'{col}_encoder.pkl') # Save each encoder
 
+print("--- Feature Correlations with Price ---")
+# Explicitly select the price and the new encoded columns
+cols_to_check = ['price', 'variety_encoded', 'region_1_encoded', 'province_encoded', 'winery_encoded', 'country_encoded']
+print(dataFrame[cols_to_check].corr()['price'].sort_values(ascending=False))
+
 # 4. Train Price Estimator (NO POINTS)
-X_price = dataFrame[['variety_encoded', 'region_1_encoded', 'province_encoded', 'winery_encoded']]
+X_price = dataFrame[['variety_encoded', 'region_1_encoded', 'province_encoded', 'winery_encoded', 'country_encoded']]
 y_price = dataFrame['price']
 
 X_train_p, X_test_p, y_train_p, y_test_p = train_test_split(X_price, y_price, test_size=0.2, random_state=42)

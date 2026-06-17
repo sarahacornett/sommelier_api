@@ -4,85 +4,43 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 import joblib
 
-trainingDataCSV = 'winemag-data-130k-v2.csv'
-
-# Load the data
-dataFrame = pd.read_csv(trainingDataCSV)
-
-# Keeping only the columns we care about. Points are the average score from WineEnthusiest (1-100) 
-dataFrame = dataFrame[['variety', 'region_1', 'points', 'price']]
-
-# Dropping the rows with missing data
+# 1. Load data and include the new columns
+dataFrame = pd.read_csv('winemag-data-130k-v2.csv')
+dataFrame = dataFrame[['variety', 'region_1', 'province', 'winery', 'points', 'price']]
 dataFrame = dataFrame.dropna()
 
-# Filter for top 10 varieties and regions to keep the app simple, for now
+# 2. Filter for top 10 (keep it simple)
 top_varieties = dataFrame['variety'].value_counts().nlargest(10).index
 top_regions = dataFrame['region_1'].value_counts().nlargest(10).index
-
-# reconfigure the data frame to only contain top 10 values
 dataFrame = dataFrame[dataFrame['variety'].isin(top_varieties) & dataFrame['region_1'].isin(top_regions)]
 
+# 3. Create AND SAVE all 4 encoders
+encoders = {}
+for col in ['variety', 'region_1', 'province', 'winery']:
+    le = LabelEncoder()
+    dataFrame[f'{col}_encoded'] = le.fit_transform(dataFrame[col])
+    encoders[col] = le
+    joblib.dump(le, f'{col}_encoder.pkl') # Save each encoder
 
-
-
-# Encoding Text
-
-# Initialize encoders
-# converts labels into numerical values for the model to use.
-variety_encoder = LabelEncoder()
-region_encoder = LabelEncoder()
-
-# Fit and transform the text columns into numbers
-dataFrame['variety_encoded'] = variety_encoder.fit_transform(dataFrame['variety'])
-dataFrame['region_encoded'] = region_encoder.fit_transform(dataFrame['region_1'])
-
-# Define our input features (X)
-X = dataFrame[['variety_encoded', 'region_encoded', 'points']]
-
-
-
-
-# Train Model A: Price Estimator
-# Using Random Forest Algorithm for regression to predict the price of the wine based on its variety, region, and points.
-# Target variable for Model A
+# 4. Train Price Estimator (NO POINTS)
+X_price = dataFrame[['variety_encoded', 'region_1_encoded', 'province_encoded', 'winery_encoded']]
 y_price = dataFrame['price']
 
-# Split data into training and testing sets
-X_train_p, X_test_p, y_train_p, y_test_p = train_test_split(X, y_price, test_size=0.2, random_state=42)
-
-print("Training Price Estimator...")
+X_train_p, X_test_p, y_train_p, y_test_p = train_test_split(X_price, y_price, test_size=0.2, random_state=42)
 price_model = RandomForestRegressor(n_estimators=100, random_state=42)
 price_model.fit(X_train_p, y_train_p)
-print(f"Price Model Accuracy (R^2): {price_model.score(X_test_p, y_test_p):.2f}")
+joblib.dump(price_model, 'xgboost_price_model.pkl') # Saved as the name main.py expects
+print(f"Price Model R^2: {price_model.score(X_test_p, y_test_p):.2f}")
 
-
-
-
-# Train Model B: Quality Classifier
-# We will create a binary classification model to predict if a wine is of "good quality" (points >= 90) or not, based on its variety, region, and price.
-# Create a new binary target variable: 1 if points >= 90, else 0
+# 5. Train Quality Classifier
 dataFrame['is_good_quality'] = (dataFrame['points'] >= 90).astype(int)
-
-# Input features for Quality (we don't use 'points' to predict 'is_good_quality'!)
-X_quality = dataFrame[['variety_encoded', 'region_encoded', 'price']]
+X_quality = dataFrame[['variety_encoded', 'region_1_encoded', 'price']]
 y_quality = dataFrame['is_good_quality']
 
 X_train_q, X_test_q, y_train_q, y_test_q = train_test_split(X_quality, y_quality, test_size=0.2, random_state=42)
-
-print("Training Quality Classifier...")
 quality_model = RandomForestClassifier(n_estimators=100, random_state=42)
 quality_model.fit(X_train_q, y_train_q)
+joblib.dump(quality_model, 'quality_model.pkl')
 print(f"Quality Model Accuracy: {quality_model.score(X_test_q, y_test_q):.2f}")
 
-
-
-
-# Save the models
-joblib.dump(price_model, 'price_model.pkl')
-joblib.dump(quality_model, 'quality_model.pkl')
-
-# Save the encoders
-joblib.dump(variety_encoder, 'variety_encoder.pkl')
-joblib.dump(region_encoder, 'region_encoder.pkl')
-
-print("Day 1 Complete! Models and encoders saved successfully.")
+print("Training Complete! Models and all 4 encoders saved.")

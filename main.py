@@ -7,6 +7,20 @@ import joblib
 import pandas as pd
 import chromadb
 from dotenv import load_dotenv
+from typing import Optional
+
+#encoders used to conver string literals to expect numerical values
+variety_encoder = joblib.load('variety_encoder.pkl')
+region_encoder = joblib.load('region_1_encoder.pkl')
+province_encoder = joblib.load('province_encoder.pkl')
+winery_encoder = joblib.load('winery_encoder.pkl')
+
+def safe_transform(encoder, value):
+    # If the value is in our known list, transform it
+    if value in encoder.classes_:
+        return encoder.transform([value])[0]
+    # Otherwise, map it to the "Unknown" category (assuming "Unknown" was in your training data)
+    return encoder.transform(["Unknown"])[0]
 
 # Load environment variables (like your Gemini API key)
 load_dotenv()
@@ -41,25 +55,23 @@ async def root():
 
 # --- XGBOOST PRICE PREDICTOR ---
 class WinePriceRequest(BaseModel):
-    variety: str = "Unknown"
-    region: str = "Unknown"
-    province: str = "Unknown"
-    winery: str = "Unknown"
+    variety: str
+    region: str
+    province: Optional[str] = "Unknown"  # Optional
+    winery: Optional[str] = "Unknown"    # Optional
 
 @app.post("/predict-price")
 async def predict_custom_model(request: WinePriceRequest):
     try:
-        # Convert the incoming JSON into a 1-row Pandas DataFrame
+        # If the user leaves them out, they default to "Unknown"
+        # Ensure your encoders are trained to handle the string "Unknown"
+        # or map None to the most common category (mode).
         input_data = pd.DataFrame([{
-            'variety': request.variety,
-            'region_1': request.region,
-            'province': request.province,
-            'winery': request.winery
+            'variety_encoded': safe_transform(variety_encoder, request.variety),
+            'region_encoded': safe_transform(region_encoder, request.region),
+            'province_encoded': safe_transform(province_encoder, request.province or "Unknown"),
+            'winery_encoded': safe_transform(winery_encoder, request.winery or "Unknown")
         }])
-
-        # Tell Pandas these are categorical columns (Required for XGBoost)
-        for col in ['variety', 'region_1', 'province', 'winery']:
-            input_data[col] = input_data[col].astype('category')
 
         prediction = xgb_model.predict(input_data)
         final_price = round(float(prediction[0]), 2)

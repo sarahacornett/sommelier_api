@@ -9,6 +9,11 @@ dataFrame = pd.read_csv('winemag-data-130k-v2.csv')
 dataFrame = dataFrame[['variety', 'region_1', 'province', 'winery', 'points', 'price']]
 dataFrame = dataFrame.dropna()
 
+# Check correlations with the price
+correlations = dataFrame.select_dtypes(include=['number']).corr()['price'].sort_values(ascending=False)
+print("--- Feature Correlations with Price ---")
+print(correlations)
+
 # 2. Filter for top 10 (keep it simple)
 top_varieties = dataFrame['variety'].value_counts().nlargest(10).index
 top_regions = dataFrame['region_1'].value_counts().nlargest(10).index
